@@ -2,10 +2,9 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
+import { env } from "./config/env.js";
 
 const app = express();
-
-const PORT = 5000;
 
 // Middleware
 app.use(helmet());
@@ -18,10 +17,11 @@ app.get("/api/health", (req, res) => {
     success: true,
     message: "LedgerGuard Backend is running successfully!",
     service: "LedgerGuard API",
+    environment: env.NODE_ENV,
   });
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`LedgerGuard server running on port ${PORT}`);
+app.listen(env.PORT, () => {
+  console.log(`LedgerGuard server running on port ${env.PORT}`);
 });
