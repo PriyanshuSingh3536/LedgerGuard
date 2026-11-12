@@ -14,6 +14,10 @@ const envSchema = z.object({
     .min(1)
     .max(65535)
     .default(5000),
+
+  // RSA key file paths
+  JWT_PRIVATE_KEY_PATH: z.string().min(1),
+  JWT_PUBLIC_KEY_PATH: z.string().min(1),
 });
 
 // Validate environment variables
