@@ -15,6 +15,11 @@ const envSchema = z.object({
     .max(65535)
     .default(5000),
 
+    JWT_ACCESS_TOKEN_TTL: z
+  .string()
+  .regex(/^\d+(s|m|h|d)$/)
+  .default("1h"),
+
   // RSA key file paths
   JWT_PRIVATE_KEY_PATH: z.string().min(1),
   JWT_PUBLIC_KEY_PATH: z.string().min(1),
