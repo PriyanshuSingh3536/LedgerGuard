@@ -15,10 +15,28 @@ const envSchema = z.object({
     .max(65535)
     .default(5000),
 
-    JWT_ACCESS_TOKEN_TTL: z
-  .string()
-  .regex(/^\d+(s|m|h|d)$/)
-  .default("1h"),
+  // MongoDB Atlas connection URI
+  MONGODB_URI: z
+    .string()
+    .min(1, "MongoDB URI is required")
+    .refine(
+      (value) =>
+        value.startsWith("mongodb://") ||
+        value.startsWith("mongodb+srv://"),
+      "Invalid MongoDB connection URI"
+    ),
+
+  // Prefix used for tenant database names
+  MONGODB_DB_PREFIX: z
+    .string()
+    .min(1)
+    .default("ledgerguard"),
+
+  // JWT access token expiration
+  JWT_ACCESS_TOKEN_TTL: z
+    .string()
+    .regex(/^\d+(s|m|h|d)$/)
+    .default("1h"),
 
   // RSA key file paths
   JWT_PRIVATE_KEY_PATH: z.string().min(1),
