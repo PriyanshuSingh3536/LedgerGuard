@@ -45,18 +45,18 @@ export async function getTenantConnection(
   });
 
   const connectionPromise = connection.asPromise().catch(
-  async (error: unknown) => {
-    // Remove only this failed connection entry.
-    if (tenantConnections.get(databaseName) === connectionPromise) {
-      tenantConnections.delete(databaseName);
+    async (error: unknown) => {
+      // Remove only this failed connection entry.
+      if (tenantConnections.get(databaseName) === connectionPromise) {
+        tenantConnections.delete(databaseName);
+      }
+
+      // Clean up the failed connection.
+      await connection.close().catch(() => undefined);
+
+      throw error;
     }
-
-    // Clean up the failed connection.
-    await connection.close().catch(() => undefined);
-
-    throw error;
-  }
-);
+  );
 
   tenantConnections.set(databaseName, connectionPromise);
 
