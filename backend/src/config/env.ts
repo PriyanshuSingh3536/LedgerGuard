@@ -26,6 +26,17 @@ const envSchema = z.object({
       "Invalid MongoDB connection URI"
     ),
 
+      // Redis connection URI
+  REDIS_URL: z
+    .string()
+    .min(1, "Redis URL is required")
+    .refine(
+      (value) =>
+        value.startsWith("redis://") ||
+        value.startsWith("rediss://"),
+      "Invalid Redis connection URL"
+    ),
+
   // Prefix used for tenant database names
   MONGODB_DB_PREFIX: z
     .string()

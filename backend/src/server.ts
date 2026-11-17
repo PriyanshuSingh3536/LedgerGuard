@@ -5,6 +5,7 @@ import helmet from "helmet";
 
 import { env } from "./config/env.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import { connectRedis, disconnectRedis } from "./config/redis.js";
 
 const app = express();
 
@@ -25,7 +26,48 @@ app.get("/api/health", (req, res) => {
 // Authentication routes
 app.use("/api/auth", authRoutes);
 
-// Start server
-app.listen(env.PORT, () => {
-  console.log(`LedgerGuard server running on port ${env.PORT}`);
-});
+// Start server after Redis connection
+async function startServer(): Promise<void> {
+  try {
+    await connectRedis();
+
+    const server = app.listen(env.PORT, () => {
+      console.log(`LedgerGuard server running on port ${env.PORT}`);
+    });
+
+    // Graceful shutdown
+    const shutdown = (signal: string): void => {
+      console.log(`${signal} received. Shutting down server...`);
+
+      server.close(async (error) => {
+        if (error) {
+          console.error("Server shutdown error:", error);
+          process.exitCode = 1;
+        }
+
+        try {
+          await disconnectRedis();
+          console.log("Redis connection closed successfully");
+        } catch (redisError) {
+          console.error("Redis shutdown error:", redisError);
+          process.exitCode = 1;
+        }
+      });
+    };
+
+    process.once("SIGINT", () => shutdown("SIGINT"));
+    process.once("SIGTERM", () => shutdown("SIGTERM"));
+  } catch (error) {
+    console.error("Failed to start LedgerGuard server:", error);
+
+    try {
+      await disconnectRedis();
+    } catch (redisError) {
+      console.error("Redis cleanup error:", redisError);
+    }
+
+    process.exitCode = 1;
+  }
+}
+
+void startServer();
