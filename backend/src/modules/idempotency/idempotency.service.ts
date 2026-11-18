@@ -42,6 +42,23 @@ const RELEASE_SCRIPT = `
   return 0
 `;
 
+// Recover an idempotency key after MongoDB confirms
+// that the transaction has already been committed.
+const RECOVER_COMPLETE_SCRIPT = `
+  local current = redis.call("GET", KEYS[1])
+
+  if current and string.sub(current, 1, 11) == "processing:" then
+    redis.call("SET", KEYS[1], "completed", "EX", ARGV[1])
+    return 1
+  end
+
+  if current == "completed" then
+    return 1
+  end
+
+  return 0
+`;
+
 function getIdempotencyRedisKey(
   tenantId: string,
   idempotencyKey: string
@@ -120,6 +137,24 @@ export async function releaseIdempotencyKey(
     1,
     key,
     `processing:${token}`
+  );
+
+  return result === 1;
+}
+
+// Recover an event after MongoDB confirms that
+// its transaction has already been committed.
+export async function recoverCompletedIdempotencyKey(
+  tenantId: string,
+  idempotencyKey: string
+): Promise<boolean> {
+  const key = getIdempotencyRedisKey(tenantId, idempotencyKey);
+
+  const result = await redisClient.eval(
+    RECOVER_COMPLETE_SCRIPT,
+    1,
+    key,
+    IDEMPOTENCY_TTL_SECONDS.toString()
   );
 
   return result === 1;

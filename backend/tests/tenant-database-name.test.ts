@@ -27,7 +27,7 @@ console.log("PASS: Different organizations generate different database names");
 // Test 3: Generated database name should contain only safe characters.
 assert.match(
   firstName,
-  /^ledgerguard_tenant_[a-f0-9]{24}$/
+  /^ledger_tenant_[a-f0-9]{24}$/
 );
 
 console.log("PASS: Database name follows the expected safe format");
