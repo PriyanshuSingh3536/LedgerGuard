@@ -19,6 +19,7 @@ api.interceptors.response.use(
   }
 );
 
+// Backend { success, data } bhejta hai, ye sirf data return karta hai
 export async function get<T>(url: string): Promise<T> {
   const res = await api.get<ApiSuccess<T>>(url);
   return res.data.data;

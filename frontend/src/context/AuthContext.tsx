@@ -24,11 +24,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => { setToken(null); setMe(null); };
+  const logout = () => {
+    setToken(null);
+    setMe(null);
+  };
 
   return <AuthContext.Provider value={{ me, login, logout }}>{children}</AuthContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider');
