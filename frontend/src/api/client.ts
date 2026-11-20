@@ -24,3 +24,8 @@ export async function get<T>(url: string): Promise<T> {
   const res = await api.get<ApiSuccess<T>>(url);
   return res.data.data;
 }
+
+export async function post<T>(url: string, body: unknown): Promise<T> {
+  const res = await api.post<ApiSuccess<T>>(url, body);
+  return res.data.data;
+}
