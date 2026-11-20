@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useUsageData } from '../hooks/useUsageData';
 import { TransactionsLine, RevenueBar } from '../components/charts/UsageCharts';
 import { formatMoney } from '../utils/money';
+import LiveFeed from '../components/LiveFeed';
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
   return (
@@ -57,6 +58,9 @@ export default function Dashboard() {
               <h3 className="mb-3 font-medium">Amount per day (INR)</h3>
               <RevenueBar data={data} />
             </div>
+          </div>
+          <div className="mt-4">
+            <LiveFeed />
           </div>
         </>
       )}

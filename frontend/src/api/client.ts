@@ -3,6 +3,7 @@ import type { ApiSuccess } from '../types';
 
 let token: string | null = null;
 export const setToken = (t: string | null) => { token = t; };
+export const getToken = () => token;
 
 export const api = axios.create({ baseURL: import.meta.env.VITE_API_URL });
 
