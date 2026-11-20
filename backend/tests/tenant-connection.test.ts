@@ -9,6 +9,10 @@ process.env.MONGODB_URI =
 async function runTests() {
   const originalCreateConnection = mongoose.createConnection;
 
+  let closeTenantConnection:
+    | ((organizationId: string) => Promise<void>)
+    | undefined;
+
   let createCount = 0;
   let closeCount = 0;
   let failNextConnection = false;
@@ -45,27 +49,71 @@ async function runTests() {
   });
 
   try {
-    const {
-      getTenantConnection,
-      closeTenantConnection,
-    } = await import("../src/config/database.js");
+    const databaseModule = await import(
+      "../src/config/database.js"
+    );
+
+    const { getTenantConnection } = databaseModule;
+
+    closeTenantConnection =
+      databaseModule.closeTenantConnection;
 
     // Test 1: Same tenant should reuse its connection.
-    const connectionA1 = await getTenantConnection("tenant-test-1");
-    const connectionA2 = await getTenantConnection("tenant-test-1");
+    const connectionA1 =
+      await getTenantConnection("tenant-test-1");
+
+    const connectionA2 =
+      await getTenantConnection("tenant-test-1");
 
     assert.equal(connectionA1, connectionA2);
     assert.equal(createCount, 1);
 
-    console.log("PASS: Same tenant reuses its existing connection");
+    console.log(
+      "PASS: Same tenant reuses its existing connection"
+    );
 
-    // Test 2: Different tenants should get separate connections.
-    const connectionB = await getTenantConnection("tenant-test-2");
+    // Test 1B: Concurrent requests should reuse one connection.
+    const concurrentResults = await Promise.all(
+      Array.from({ length: 5 }, () =>
+        getTenantConnection("tenant-concurrent-test")
+      )
+    );
 
-    assert.notEqual(connectionA1, connectionB);
+    assert.ok(
+      concurrentResults.every(
+        (connection) => connection === concurrentResults[0]
+      )
+    );
+
     assert.equal(createCount, 2);
 
-    console.log("PASS: Different tenants get separate connections");
+    console.log(
+      "PASS: Concurrent requests reuse a single tenant connection"
+    );
+
+    // Test 2: Different tenants should get separate connections.
+    const connectionB =
+      await getTenantConnection("tenant-test-2");
+
+    assert.notEqual(connectionA1, connectionB);
+    assert.equal(createCount, 3);
+
+    console.log(
+      "PASS: Different tenants get separate connections"
+    );
+
+    // Test 2B: Different tenants should use different database names.
+    const tenantDatabaseNames =
+      createdDatabaseNames.slice(0, 3);
+
+    assert.equal(
+      new Set(tenantDatabaseNames).size,
+      3
+    );
+
+    console.log(
+      "PASS: Different tenants use separate database names"
+    );
 
     // Test 3: Failed connection should be removed from the cache.
     failNextConnection = true;
@@ -81,9 +129,11 @@ async function runTests() {
       await getTenantConnection("tenant-test-3");
 
     assert.ok(connectionAfterFailure);
-    assert.equal(createCount, 4);
+    assert.equal(createCount, 5);
 
-    console.log("PASS: Failed connection is cleaned up and can be retried");
+    console.log(
+      "PASS: Failed connection is cleaned up and can be retried"
+    );
 
     // Test 4: Closing a tenant connection should remove it from the cache.
     await closeTenantConnection("tenant-test-1");
@@ -94,17 +144,34 @@ async function runTests() {
       await getTenantConnection("tenant-test-1");
 
     assert.notEqual(connectionA1, connectionAfterClose);
-    assert.equal(createCount, 5);
+    assert.equal(createCount, 6);
 
-    console.log("PASS: Closed connection is removed and recreated");
+    console.log(
+      "PASS: Closed connection is removed and recreated"
+    );
 
-    console.log("All tenant connection manager tests passed!");
+    console.log(
+      "All tenant connection manager tests passed!"
+    );
   } finally {
-    Object.defineProperty(mongoose, "createConnection", {
-      configurable: true,
-      writable: true,
-      value: originalCreateConnection,
-    });
+    try {
+      // Close all remaining tenant connections.
+      if (closeTenantConnection) {
+        await Promise.all([
+          closeTenantConnection("tenant-test-1"),
+          closeTenantConnection("tenant-test-2"),
+          closeTenantConnection("tenant-test-3"),
+          closeTenantConnection("tenant-concurrent-test"),
+        ]);
+      }
+    } finally {
+      // Restore original Mongoose connection method.
+      Object.defineProperty(mongoose, "createConnection", {
+        configurable: true,
+        writable: true,
+        value: originalCreateConnection,
+      });
+    }
   }
 }
 
