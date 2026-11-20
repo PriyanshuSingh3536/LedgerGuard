@@ -34,7 +34,20 @@ export async function getTenantConnection(
   const existingConnection = tenantConnections.get(databaseName);
 
   if (existingConnection) {
-    return existingConnection;
+    const connection = await existingConnection;
+
+    // Reuse only an active connection.
+    if (connection.readyState === 1) {
+      return connection;
+    }
+
+    // Another request may have already replaced this connection.
+    if (tenantConnections.get(databaseName) !== existingConnection) {
+      return getTenantConnection(organizationId);
+    }
+
+    // Remove stale or disconnected connection.
+    tenantConnections.delete(databaseName);
   }
 
   const connection = mongoose.createConnection(env.MONGODB_URI, {

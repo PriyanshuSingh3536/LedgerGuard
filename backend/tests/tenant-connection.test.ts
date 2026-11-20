@@ -19,6 +19,11 @@ async function runTests() {
 
   const createdDatabaseNames: string[] = [];
 
+  const fakeConnections: {
+    readyState: number;
+    close: () => Promise<void>;
+  }[] = [];
+
   // Replace Mongoose connection creation with a mock.
   Object.defineProperty(mongoose, "createConnection", {
     configurable: true,
@@ -30,6 +35,8 @@ async function runTests() {
       }
 
       const fakeConnection = {
+        readyState: 1,
+
         asPromise: async () => {
           if (failNextConnection) {
             failNextConnection = false;
@@ -40,9 +47,12 @@ async function runTests() {
         },
 
         close: async () => {
+          fakeConnection.readyState = 0;
           closeCount++;
         },
       };
+
+      fakeConnections.push(fakeConnection);
 
       return fakeConnection as unknown as Connection;
     },
@@ -150,6 +160,27 @@ async function runTests() {
       "PASS: Closed connection is removed and recreated"
     );
 
+    // Test 5: Stale connection should be removed and recreated.
+    const staleConnection =
+      await getTenantConnection("tenant-stale-test");
+
+    // Simulate an unexpectedly disconnected connection.
+    const staleMockConnection = fakeConnections[6];
+
+    assert.ok(staleMockConnection);
+
+    staleMockConnection.readyState = 0;
+
+    const recreatedConnection =
+      await getTenantConnection("tenant-stale-test");
+
+    assert.notEqual(staleConnection, recreatedConnection);
+    assert.equal(recreatedConnection.readyState, 1);
+    assert.equal(createCount, 8);
+    console.log(
+      "PASS: Stale connection is removed and recreated"
+    );
+
     console.log(
       "All tenant connection manager tests passed!"
     );
@@ -162,6 +193,7 @@ async function runTests() {
           closeTenantConnection("tenant-test-2"),
           closeTenantConnection("tenant-test-3"),
           closeTenantConnection("tenant-concurrent-test"),
+          closeTenantConnection("tenant-stale-test"),
         ]);
       }
     } finally {
