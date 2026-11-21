@@ -284,6 +284,68 @@ async function runTests(): Promise<void> {
 
   console.log("PASS: Missing account ID is rejected");
 
+
+  // Test 6A: Missing transaction ID.
+  resetTestState();
+
+  const missingTransactionInput = validInput();
+  missingTransactionInput.transactionId = "   ";
+
+  await assert.rejects(
+    createLedgerTransaction("company-A", missingTransactionInput),
+    /Transaction ID is required/
+  );
+
+  assert.equal(connectionCalls, 0);
+
+  console.log("PASS: Missing transaction ID is rejected");
+
+  // Test 6B: Invalid currency code.
+  resetTestState();
+
+  const invalidCurrencyInput = validInput();
+  invalidCurrencyInput.currency = "US";
+
+  await assert.rejects(
+    createLedgerTransaction("company-A", invalidCurrencyInput),
+    /A valid three-letter currency code is required/
+  );
+
+  assert.equal(connectionCalls, 0);
+
+  console.log("PASS: Invalid currency code is rejected");
+
+  // Test 6C: Unsafe integer amount.
+  resetTestState();
+
+  const unsafeAmountInput = validInput();
+  unsafeAmountInput.entries[0].amount = Number.MAX_SAFE_INTEGER + 1;
+
+  await assert.rejects(
+    createLedgerTransaction("company-A", unsafeAmountInput),
+    /Entry amount must be a positive safe integer/
+  );
+
+  assert.equal(connectionCalls, 0);
+
+  console.log("PASS: Unsafe integer amount is rejected");
+
+  // Test 6D: Invalid ledger entry side.
+  resetTestState();
+
+  const invalidSideInput = validInput();
+  invalidSideInput.entries[0].side = "invalid" as "debit";
+
+  await assert.rejects(
+    createLedgerTransaction("company-A", invalidSideInput),
+    /Invalid ledger entry side/
+  );
+
+  assert.equal(connectionCalls, 0);
+
+  console.log("PASS: Invalid ledger entry side is rejected");
+
+
   // Test 7: Entry insertion failure triggers rollback.
   resetTestState();
 
