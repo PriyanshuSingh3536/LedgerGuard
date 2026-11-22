@@ -149,17 +149,33 @@ export async function createLedgerTransaction(
 
   // Check MongoDB even when a new Redis key was acquired.
   // This handles retries after an idempotency key expires.
-  const existingTransaction = await findExistingTransaction();
+ let existingTransaction;
 
-  if (existingTransaction) {
-    await completeIdempotencyKey(
+try {
+  existingTransaction = await findExistingTransaction();
+} catch (error) {
+  try {
+    await releaseIdempotencyKey(
       organizationId,
       input.eventId,
       idempotencyResult.token
     );
-
-    return existingTransaction;
+  } catch {
+    // Preserve the original MongoDB error.
   }
+
+  throw error;
+}
+
+if (existingTransaction) {
+  await completeIdempotencyKey(
+    organizationId,
+    input.eventId,
+    idempotencyResult.token
+  );
+
+  return existingTransaction;
+}
 
   // Acquire a distributed lock.
   let lockResult;

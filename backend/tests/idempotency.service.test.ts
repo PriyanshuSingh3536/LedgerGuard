@@ -30,6 +30,7 @@ const {
   acquireIdempotencyKey,
   completeIdempotencyKey,
   releaseIdempotencyKey,
+  recoverCompletedIdempotencyKey,
 } = await import("../src/modules/idempotency/idempotency.service.js");
 
 async function runTests(): Promise<void> {
@@ -100,6 +101,30 @@ async function runTests(): Promise<void> {
 
   console.log("PASS: Processing lock can be released");
 
+
+  // Test: Completed event can be recovered after MongoDB commit.
+redisMock.eval.mock.mockImplementation(async () => 1);
+
+const recovered = await recoverCompletedIdempotencyKey(
+  "company-A",
+  "event-101"
+);
+
+assert.equal(recovered, true);
+
+console.log("PASS: Completed event can be recovered");
+
+// Test: Recovery fails when Redis key cannot be recovered.
+redisMock.eval.mock.mockImplementation(async () => 0);
+
+const failedRecovery = await recoverCompletedIdempotencyKey(
+  "company-A",
+  "event-102"
+);
+
+assert.equal(failedRecovery, false);
+
+console.log("PASS: Recovery failure is handled");
 
     // Test 6: Wrong token cannot complete another request's event.
     redisMock.eval.mock.mockImplementation(async () => 0);

@@ -12,17 +12,19 @@ async function runAtlasTransactionTest(): Promise<void> {
   const connection = await getTenantConnection(organizationId);
   const session = await connection.startSession();
 
-  const probeId = randomUUID();
+  const commitProbeId = randomUUID();
+  const rollbackProbeId = randomUUID();
+
   const collection = connection.db!.collection<{
-  _id: string;
-}>("ledgerguard_transaction_probe");
+    _id: string;
+  }>("ledgerguard_transaction_probe");
 
   try {
-    // Ensure the test collection exists before starting a transaction.
+    // Ensure the test collection exists before starting transactions.
     const collectionExists = await connection.db!
-      .listCollections(
-        { name: "ledgerguard_transaction_probe" }
-      )
+      .listCollections({
+        name: "ledgerguard_transaction_probe",
+      })
       .hasNext();
 
     if (!collectionExists) {
@@ -31,11 +33,33 @@ async function runAtlasTransactionTest(): Promise<void> {
       );
     }
 
-    // Intentionally fail after inserting a document.
+    // Test 1: Successful transaction commit.
+    await session.withTransaction(async () => {
+      await collection.insertOne(
+        { _id: commitProbeId },
+        { session }
+      );
+    });
+
+    const committedDocument = await collection.findOne({
+      _id: commitProbeId,
+    });
+
+    if (!committedDocument) {
+      throw new Error(
+        "Commit failed: document was not saved"
+      );
+    }
+
+    console.log(
+      "PASS: MongoDB transaction commit verified"
+    );
+
+    // Test 2: Failed transaction rollback.
     try {
       await session.withTransaction(async () => {
         await collection.insertOne(
-          { _id: probeId },
+          { _id: rollbackProbeId },
           { session }
         );
 
@@ -50,16 +74,19 @@ async function runAtlasTransactionTest(): Promise<void> {
       }
     }
 
-    // Verify that the inserted document was rolled back.
-    const savedDocument = await collection.findOne({
-      _id: probeId,
+    const rolledBackDocument = await collection.findOne({
+      _id: rollbackProbeId,
     });
 
-    if (savedDocument) {
+    if (rolledBackDocument) {
       throw new Error(
         "Rollback failed: probe document still exists"
       );
     }
+
+    console.log(
+      "PASS: MongoDB transaction rollback verified"
+    );
 
     console.log(
       "MongoDB Atlas connection:",
@@ -67,8 +94,15 @@ async function runAtlasTransactionTest(): Promise<void> {
     );
 
     console.log("Tenant database:", connection.name);
-    console.log("MongoDB transaction rollback: VERIFIED");
+    console.log("All Atlas transaction tests passed!");
   } finally {
+    // Remove test documents.
+    await collection.deleteMany({
+      _id: {
+        $in: [commitProbeId, rollbackProbeId],
+      },
+    }).catch(() => undefined);
+
     await session.endSession();
     await closeTenantConnection(organizationId);
   }

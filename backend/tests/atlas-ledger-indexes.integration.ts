@@ -25,6 +25,9 @@ async function verifyIndexes(): Promise<void> {
     const indexes =
       await LedgerTransactionModel.collection.indexes();
 
+    const entryIndexes =
+      await LedgerEntryModel.collection.indexes();
+
     console.log("Tenant database:", connection.name);
     console.log("\nLedger transaction indexes:");
 
@@ -54,6 +57,22 @@ async function verifyIndexes(): Promise<void> {
 
     console.log("\nPASS: Unique eventId index exists");
     console.log("PASS: Unique transactionId index exists");
+
+    const entryTransactionIdIndex = entryIndexes.find(
+      (index) =>
+        index.key.transactionId === 1 &&
+        index.unique !== true
+    );
+
+    if (!entryTransactionIdIndex) {
+      throw new Error(
+        "Ledger entry transactionId index is missing"
+      );
+    }
+
+    console.log(
+      "PASS: Ledger entry transactionId index exists"
+    );
   } finally {
     await closeTenantConnection(organizationId);
   }
