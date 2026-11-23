@@ -1,8 +1,11 @@
+import { get } from './client';
+import { endpoints, requireEndpoint } from './endpoints';
+import { isMock } from './mockSession';
 import type { UsagePoint } from '../types';
 
 export async function getUsage(days: number): Promise<UsagePoint[]> {
-  if (import.meta.env.VITE_USE_MOCK === 'true') {
-    await new Promise((r) => setTimeout(r, 400)); // fake network delay
+  if (isMock()) {
+    await new Promise((r) => setTimeout(r, 400));
     return Array.from({ length: days }, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (days - 1 - i));
@@ -14,5 +17,7 @@ export async function getUsage(days: number): Promise<UsagePoint[]> {
       };
     });
   }
-  throw new Error('Usage endpoint abhi backend mein nahi hai');
+
+  const path = requireEndpoint(endpoints.usage, 'Usage');
+  return get<UsagePoint[]>(`${path}?days=${days}`); // TODO: query format confirm karo
 }

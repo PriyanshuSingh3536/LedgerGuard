@@ -33,6 +33,7 @@ export default function Layout() {
         <h1 className="mb-6 ml-2 text-lg font-semibold">LedgerGuard</h1>
         <NavLink to="/dashboard" className={linkClass}>Dashboard</NavLink>
         <NavLink to="/ledger" className={linkClass}>Ledger</NavLink>
+        <NavLink to="/organization" className={linkClass}>Organization</NavLink>
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">

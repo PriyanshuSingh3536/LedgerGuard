@@ -1,61 +1,112 @@
 import { get, post } from './client';
-import type { CreateLedgerTransactionInput, LedgerTransaction } from '../types/ledger';
+import { endpoints, requireEndpoint } from './endpoints';
+import { getMockOrg, isMock } from './mockSession';
+import type {
+  CreateLedgerTransactionInput,
+  LedgerEntry,
+  LedgerEntrySide,
+  LedgerTransaction,
+} from '../types/ledger';
 
-const useMock = () => import.meta.env.VITE_USE_MOCK === 'true';
-const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-// In-memory mock "database" (page refresh par reset ho jata hai)
-const mockStore: LedgerTransaction[] = [
-  {
-    eventId: 'evt_001',
-    transactionId: 'txn_001',
-    currency: 'INR',
-    description: 'Monthly subscription - Pro plan',
-    createdAt: '2026-11-17T09:30:00.000Z',
-    entries: [
-      { transactionId: 'txn_001', accountId: 'customer_receivable', side: 'debit', amount: 499900 },
-      { transactionId: 'txn_001', accountId: 'subscription_revenue', side: 'credit', amount: 499900 },
-    ],
-  },
-  {
-    eventId: 'evt_002',
-    transactionId: 'txn_002',
-    currency: 'INR',
-    description: 'API usage overage - October',
-    createdAt: '2026-11-18T14:10:00.000Z',
-    entries: [
-      { transactionId: 'txn_002', accountId: 'customer_receivable', side: 'debit', amount: 125050 },
-      { transactionId: 'txn_002', accountId: 'usage_revenue', side: 'credit', amount: 125050 },
-    ],
-  },
-];
-
-export async function listTransactions(): Promise<LedgerTransaction[]> {
-  if (useMock()) {
-    await wait(300);
-    return [...mockStore].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
-  }
-  return get<LedgerTransaction[]>('/ledger'); // route abhi backend mein nahi hai
-}
+export type SimulateMode = 'none' | 'timeout' | 'processing';
+export type CreateOutcome = 'created' | 'already_processed' | 'processing';
 
 export interface CreateResult {
-  transaction: LedgerTransaction;
-  duplicate: boolean; // true = ye eventId pehle se process ho chuka tha
+  outcome: CreateOutcome;
+  transaction?: LedgerTransaction;
+}
+
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+const entry = (transactionId: string, accountId: string, side: LedgerEntrySide, amount: number): LedgerEntry => ({
+  transactionId, accountId, side, amount,
+});
+
+// Har organization ka alag mock data (tenant isolation demo)
+function seed(org: string): LedgerTransaction[] {
+  if (org === 'company-b') {
+    return [
+      {
+        eventId: 'evt_b01', transactionId: 'txn_b01', currency: 'INR',
+        description: 'Enterprise licence - annual', createdAt: '2026-11-15T11:00:00.000Z',
+        entries: [
+          entry('txn_b01', 'customer_receivable', 'debit', 1200000),
+          entry('txn_b01', 'license_revenue', 'credit', 1200000),
+        ],
+      },
+    ];
+  }
+  return [
+    {
+      eventId: 'evt_001', transactionId: 'txn_001', currency: 'INR',
+      description: 'Monthly subscription - Pro plan', createdAt: '2026-11-17T09:30:00.000Z',
+      entries: [
+        entry('txn_001', 'customer_receivable', 'debit', 499900),
+        entry('txn_001', 'subscription_revenue', 'credit', 499900),
+      ],
+    },
+    {
+      eventId: 'evt_002', transactionId: 'txn_002', currency: 'INR',
+      description: 'API usage overage - October', createdAt: '2026-11-18T14:10:00.000Z',
+      entries: [
+        entry('txn_002', 'customer_receivable', 'debit', 125050),
+        entry('txn_002', 'usage_revenue', 'credit', 125050),
+      ],
+    },
+    {
+      eventId: 'evt_003', transactionId: 'txn_003', currency: 'USD',
+      description: 'Support add-on', createdAt: '2026-11-20T08:45:00.000Z',
+      entries: [
+        entry('txn_003', 'customer_receivable', 'debit', 2500),
+        entry('txn_003', 'support_revenue', 'credit', 2500),
+      ],
+    },
+  ];
+}
+
+const stores: Record<string, LedgerTransaction[]> = {};
+function store(): LedgerTransaction[] {
+  const org = getMockOrg();
+  if (!stores[org]) stores[org] = seed(org);
+  return stores[org];
+}
+
+export async function listTransactions(): Promise<LedgerTransaction[]> {
+  if (isMock()) {
+    await wait(300);
+    return [...store()].sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''));
+  }
+  return get<LedgerTransaction[]>(requireEndpoint(endpoints.ledger.list, 'Transaction list'));
+}
+
+export async function getTransaction(transactionId: string): Promise<LedgerTransaction> {
+  if (isMock()) {
+    await wait(250);
+    const found = store().find((t) => t.transactionId === transactionId);
+    if (!found) throw new Error('Transaction not found.');
+    return found;
+  }
+  const build = endpoints.ledger.detail;
+  if (!build) throw new Error('The Transaction details API is not available on the backend yet.');
+  return get<LedgerTransaction>(build(transactionId));
 }
 
 export async function createTransaction(
   input: CreateLedgerTransactionInput,
-  opts?: { simulateTimeout?: boolean }
+  opts?: { simulate?: SimulateMode }
 ): Promise<CreateResult> {
-  if (useMock()) {
+  if (isMock()) {
     await wait(900);
 
-    // Idempotency: same eventId dobara aaye toh original return karo, naya mat banao
-    const existing = mockStore.find((t) => t.eventId === input.eventId);
-    if (existing) return { transaction: existing, duplicate: true };
+    // 1. Pehle se completed event: dobara process nahi hota
+    const existing = store().find((t) => t.eventId === input.eventId);
+    if (existing) return { outcome: 'already_processed', transaction: existing };
 
-    // Timeout simulation: kuch save nahi hota (rollback)
-    if (opts?.simulateTimeout) {
+    // 2. Duplicate request jab original abhi processing mein ho
+    if (opts?.simulate === 'processing') return { outcome: 'processing' };
+
+    // 3. Network timeout: kuch save nahi hota (rollback)
+    if (opts?.simulate === 'timeout') {
       throw new Error('Network timeout. The transaction was rolled back and nothing was saved.');
     }
 
@@ -69,11 +120,13 @@ export async function createTransaction(
       updatedAt: now,
       entries: input.entries.map((e) => ({ ...e, transactionId: input.transactionId })),
     };
-    mockStore.push(transaction);
-    return { transaction, duplicate: false };
+    store().push(transaction);
+    return { outcome: 'created', transaction };
   }
 
-  // Real mode: route aur duplicate (409) handling Sanjana se confirm karke update karna
-  const transaction = await post<LedgerTransaction>('/ledger', input);
-  return { transaction, duplicate: false };
+  const path = requireEndpoint(endpoints.ledger.create, 'Create transaction');
+  // TODO: Sanjana se confirm karo ki "created", "already completed" aur "processing"
+  // responses kaise aate hain (status code ya body), phir yahan map karo.
+  const transaction = await post<LedgerTransaction>(path, input);
+  return { outcome: 'created', transaction };
 }

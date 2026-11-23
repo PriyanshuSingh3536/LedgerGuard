@@ -15,12 +15,14 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    if (err.response?.status === 401) setToken(null);
+    if (err.response?.status === 401) {
+      setToken(null);
+      window.dispatchEvent(new Event('lg:unauthorized')); // AuthContext sun kar logout karega
+    }
     return Promise.reject(new Error(err.response?.data?.message ?? 'Network error'));
   }
 );
 
-// Backend { success, data } bhejta hai, ye sirf data return karta hai
 export async function get<T>(url: string): Promise<T> {
   const res = await api.get<ApiSuccess<T>>(url);
   return res.data.data;

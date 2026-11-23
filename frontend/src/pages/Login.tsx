@@ -33,6 +33,11 @@ export default function Login() {
         <div>
           <h1 className="text-2xl font-semibold">LedgerGuard</h1>
           <p className="text-sm text-slate-500">Sign in to your organization</p>
+          {import.meta.env.VITE_USE_MOCK === 'true' && (
+            <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">
+              Demo mode: use any email and password. Include "companyb" in the email (e.g. companyb@test.com) to sign in as Company B.
+            </p>
+          )}
         </div>
 
         <input

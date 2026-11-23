@@ -29,4 +29,4 @@ export interface CreateLedgerTransactionInput {
   }>;
 }
 
-export type SubmitState = 'idle' | 'submitting' | 'success' | 'failed_rolled_back';
+export type SubmitState = 'idle' | 'submitting' | 'success' | 'processing' | 'failed_rolled_back';
