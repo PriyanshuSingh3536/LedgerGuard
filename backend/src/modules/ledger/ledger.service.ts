@@ -11,6 +11,7 @@ import {
 
 import {
   acquireLock,
+  extendLock,
   releaseLock,
 } from "../locking/locking.service.js";
 
@@ -77,6 +78,63 @@ function validateLedgerInput(
   if (totalDebits !== totalCredits) {
     throw new Error("Total debits and credits must be equal");
   }
+}
+
+// Maintain the distributed lock while a transaction is running.
+function startLockHeartbeat(
+  organizationId: string,
+  transactionId: string,
+  lockToken: string
+) {
+  const HEARTBEAT_INTERVAL_MS = 10_000;
+
+  let stopped = false;
+  let lockLost = false;
+  let renewalInProgress = false;
+
+  const timer = setInterval(async () => {
+    if (stopped || renewalInProgress || lockLost) {
+      return;
+    }
+
+    renewalInProgress = true;
+
+    try {
+      const extended = await extendLock(
+        organizationId,
+        transactionId,
+        lockToken
+      );
+
+      if (!extended) {
+        lockLost = true;
+      }
+    } catch {
+      lockLost = true;
+    } finally {
+      renewalInProgress = false;
+    }
+  }, HEARTBEAT_INTERVAL_MS);
+
+  return {
+    assertLockActive() {
+      if (lockLost) {
+        throw new Error(
+          "Distributed lock was lost during transaction"
+        );
+      }
+    },
+
+    async stop() {
+      stopped = true;
+      clearInterval(timer);
+
+      // Wait for an already-running renewal to finish.
+      while (renewalInProgress) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+    },
+  };
 }
 
  // Create a ledger transaction atomically for a tenant.
@@ -200,16 +258,27 @@ if (existingTransaction) {
   }
 
   if (!lockResult.acquired) {
+  try {
     await releaseIdempotencyKey(
       organizationId,
       input.eventId,
       idempotencyResult.token
     );
-
-    throw new Error(
-      "Another request is already processing this transaction"
-    );
+  } catch {
+    // Preserve the original lock conflict error.
   }
+
+  throw new Error(
+    "Another request is already processing this transaction"
+  );
+}
+
+// Start heartbeat to keep the distributed lock alive.
+const heartbeat = startLockHeartbeat(
+  organizationId,
+  input.transactionId,
+  lockResult.token
+);
 
   let session:
     | Awaited<ReturnType<Connection["startSession"]>>
@@ -225,7 +294,9 @@ if (existingTransaction) {
       | null = null;
 
     // Save transaction and entries atomically.
-    await session.withTransaction(async () => {
+   await session.withTransaction(async () => {
+  // Stop processing if the Redis lock has been lost.
+  heartbeat.assertLockActive();
       const [transaction] = await LedgerTransactionModel.create(
         [
           {
@@ -248,6 +319,8 @@ if (existingTransaction) {
       }));
 
       await LedgerEntryModel.insertMany(entries, { session });
+      // Verify lock ownership before completing the transaction.
+heartbeat.assertLockActive();
     });
 
     transactionCommitted = true;
@@ -281,19 +354,24 @@ if (existingTransaction) {
 
     throw error;
   } finally {
-    if (session) {
-      await session.endSession();
-    }
+    // Stop heartbeat before releasing the distributed lock.
+    await heartbeat.stop();
 
-    // Always attempt to release the distributed lock.
     try {
-      await releaseLock(
-        organizationId,
-        input.transactionId,
-        lockResult.token
-      );
-    } catch {
-      // The lock will expire automatically after its TTL.
+      if (session) {
+        await session.endSession();
+      }
+    } finally {
+      // Always attempt to release the distributed lock.
+      try {
+        await releaseLock(
+          organizationId,
+          input.transactionId,
+          lockResult.token
+        );
+      } catch {
+        // The lock will expire automatically after its TTL.
+      }
     }
   }
 }

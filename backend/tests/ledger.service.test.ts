@@ -15,7 +15,11 @@ let releaseIdempotencyCalls = 0;
 let recoverIdempotencyCalls = 0;
 let acquireLockCalls = 0;
 let releaseLockCalls = 0;
+let extendLockCalls = 0;
 
+let heartbeatCallback: (() => Promise<void>) | undefined;
+let triggerHeartbeatDuringTransaction = false;
+let extendLockResult = true;
 let insertManyError: Error | null = null;
 let idempotencyStatus: "acquired" | "completed" | "processing" = "acquired";
 let lockAcquired = true;
@@ -45,6 +49,18 @@ const fakeSession = {
 const fakeConnection = {
   startSession: async () => fakeSession,
 };
+// Mock heartbeat timer for deterministic testing.
+const fakeTimer = 123;
+
+globalThis.setInterval = ((callback: () => Promise<void>) => {
+  heartbeatCallback = callback;
+
+  return fakeTimer as unknown as ReturnType<typeof setInterval>;
+}) as typeof setInterval;
+
+globalThis.clearInterval = (() => {
+  heartbeatCallback = undefined;
+}) as typeof clearInterval;
 
 const transactionModel = {
   findOne: async (_query: { eventId: string }) => {
@@ -70,6 +86,10 @@ const entryModel = {
 
     if (insertManyError) {
       throw insertManyError;
+    }
+
+    if (triggerHeartbeatDuringTransaction && heartbeatCallback) {
+      await heartbeatCallback();
     }
 
     return [];
@@ -147,6 +167,11 @@ mock.module("../src/modules/locking/locking.service.js", {
       releaseLockCalls++;
       return true;
     },
+
+   extendLock: async () => {
+  extendLockCalls++;
+  return extendLockResult;
+},
   },
 });
 
@@ -163,6 +188,7 @@ function resetTestState(): void {
   commitCount = 0;
   rollbackCount = 0;
   endSessionCount = 0;
+  extendLockCalls = 0;
 
   completeIdempotencyCalls = 0;
   releaseIdempotencyCalls = 0;
@@ -174,6 +200,9 @@ function resetTestState(): void {
   idempotencyStatus = "acquired";
   lockAcquired = true;
   existingTransaction = null;
+  triggerHeartbeatDuringTransaction = false;
+  extendLockResult = true;
+  heartbeatCallback = undefined;
 }
 
 function validInput() {
@@ -432,6 +461,46 @@ async function runTests(): Promise<void> {
 
   console.log("PASS: Lock conflict releases idempotency claim");
 
+// Test 12: Successful distributed lock heartbeat renewal.
+  resetTestState();
+
+  triggerHeartbeatDuringTransaction = true;
+
+  await createLedgerTransaction(
+    "company-A",
+    validInput()
+  );
+
+  assert.equal(extendLockCalls, 1);
+  assert.equal(commitCount, 1);
+  assert.equal(rollbackCount, 0);
+  assert.equal(releaseLockCalls, 1);
+  assert.equal(heartbeatCallback, undefined);
+
+  console.log("PASS: Distributed lock heartbeat renews successfully");
+
+  // Test 13: Lost distributed lock aborts transaction.
+  resetTestState();
+
+  triggerHeartbeatDuringTransaction = true;
+  extendLockResult = false;
+
+  await assert.rejects(
+    createLedgerTransaction(
+      "company-A",
+      validInput()
+    ),
+    /Distributed lock was lost during transaction/
+  );
+
+  assert.equal(extendLockCalls, 1);
+  assert.equal(commitCount, 0);
+  assert.equal(rollbackCount, 1);
+  assert.equal(releaseLockCalls, 1);
+  assert.equal(heartbeatCallback, undefined);
+
+  console.log("PASS: Lost distributed lock aborts transaction");
+
   console.log("\nAll ledger service tests passed!");
 }
 
@@ -439,3 +508,5 @@ void runTests().catch((error) => {
   console.error("Ledger service tests failed:", error);
   process.exitCode = 1;
 });
+
+
