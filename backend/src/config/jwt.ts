@@ -5,12 +5,13 @@ import { fileURLToPath } from "node:url";
 
 import { env } from "./env.js";
 
-// Resolve the backend root directory independently
-// of the terminal's current working directory.
+// Resolve the current configuration directory.
 const currentDirectory = dirname(fileURLToPath(import.meta.url));
-const backendRoot = resolve(currentDirectory, "../..");
 
-// Resolve RSA key file paths
+// Resolve the backend root directory.
+const backendRoot = resolve(currentDirectory, "../../..");
+
+// Resolve RSA key file paths.
 const privateKeyPath = resolve(
   backendRoot,
   env.JWT_PRIVATE_KEY_PATH
@@ -21,7 +22,7 @@ const publicKeyPath = resolve(
   env.JWT_PUBLIC_KEY_PATH
 );
 
-// Load RSA keys
+// Load RSA keys.
 function loadKey(path: string, keyName: string): string {
   try {
     return readFileSync(path, "utf8");

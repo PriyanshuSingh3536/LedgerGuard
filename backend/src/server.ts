@@ -5,7 +5,9 @@ import helmet from "helmet";
 
 import { env } from "./config/env.js";
 import authRoutes from "./modules/auth/auth.routes.js";
+import tenantRoutes from "./modules/tenant/tenant.routes.js";
 import { connectRedis, disconnectRedis } from "./config/redis.js";
+import ledgerRoutes from "./modules/ledger/ledger.routes.js";
 
 const app = express();
 
@@ -25,6 +27,8 @@ app.get("/api/health", (req, res) => {
 
 // Authentication routes
 app.use("/api/auth", authRoutes);
+app.use("/api/tenant", tenantRoutes);
+app.use("/api/ledger", ledgerRoutes);
 
 // Start server after Redis connection
 async function startServer(): Promise<void> {
