@@ -29,4 +29,16 @@ export interface CreateLedgerTransactionInput {
   }>;
 }
 
-export type SubmitState = 'idle' | 'submitting' | 'success' | 'processing' | 'failed_rolled_back';
+export type SubmitState = 'idle' | 'submitting' | 'success' | 'processing' | 'failed_rolled_back' | 'failed_unknown';
+export type AttemptStatus = 'success' | 'duplicate' | 'processing' | 'rolled_back' | 'unknown';
+
+export interface Attempt {
+  id: number;
+  transactionId: string;
+  eventId: string;
+  amount: number; // minor units
+  currency: string;
+  status: AttemptStatus;
+  message: string;
+  at: string; // ISO
+}

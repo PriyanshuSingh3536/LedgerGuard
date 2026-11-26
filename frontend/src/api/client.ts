@@ -2,10 +2,27 @@ import axios from 'axios';
 import type { ApiSuccess } from '../types';
 
 let token: string | null = null;
-export const setToken = (t: string | null) => { token = t; };
+
+export const setToken = (t: string | null) => {
+  token = t;
+};
+
 export const getToken = () => token;
 
-export const api = axios.create({ baseURL: import.meta.env.VITE_API_URL });
+// API Error Class
+export class ApiError extends Error {
+  status?: number;
+
+  constructor(message: string, status?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
+export const api = axios.create({
+  baseURL: import.meta.env.VITE_API_URL,
+});
 
 api.interceptors.request.use((config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
@@ -17,9 +34,15 @@ api.interceptors.response.use(
   (err) => {
     if (err.response?.status === 401) {
       setToken(null);
-      window.dispatchEvent(new Event('lg:unauthorized')); // AuthContext sun kar logout karega
+      window.dispatchEvent(new Event('lg:unauthorized'));
     }
-    return Promise.reject(new Error(err.response?.data?.message ?? 'Network error'));
+
+    return Promise.reject(
+      new ApiError(
+        err.response?.data?.message ?? 'Network error',
+        err.response?.status
+      )
+    );
   }
 );
 

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useLedger } from '../hooks/useLedger';
 import LedgerTable from '../components/ledger/LedgerTable';
 import TransactionForm from '../components/ledger/TransactionForm';
+import AttemptLog from '../components/ledger/AttemptLog';
 
 export default function Ledger() {
   const { transactions, loading, error, reload } = useLedger();
@@ -63,6 +64,9 @@ export default function Ledger() {
       {loading && <p className="text-slate-500">Loading...</p>}
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
       {!loading && !error && <LedgerTable transactions={filtered} />}
+      <div className="mt-6">
+        <AttemptLog ledgerCount={transactions.length} />
+      </div>
     </div>
   );
 }

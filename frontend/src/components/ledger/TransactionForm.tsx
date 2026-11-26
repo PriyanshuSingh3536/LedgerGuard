@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
-import { createTransaction, type SimulateMode } from '../../api/ledger';
+import { createTransaction, TransactionError, type SimulateMode } from '../../api/ledger';
 import { isMock } from '../../api/mockSession';
+import { useAttempts } from '../../context/AttemptsContext';
+import { useNotifications } from '../../context/NotificationContext';
 import type { CreateLedgerTransactionInput, LedgerEntrySide, SubmitState } from '../../types/ledger';
 import { formatMoney, toMinorUnits } from '../../utils/money';
 import { validateTransaction } from '../../utils/validateTransaction';
@@ -22,6 +24,9 @@ const emptyRows = (): Row[] => [
 ];
 
 export default function TransactionForm({ onCreated }: { onCreated: () => void }) {
+  const { notify } = useNotifications();
+  const { record } = useAttempts();
+
   const [mode, setMode] = useState<'simple' | 'advanced'>('simple');
   const [description, setDescription] = useState('');
   const [currency, setCurrency] = useState('INR');
@@ -32,20 +37,20 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
   const [status, setStatus] = useState<SubmitState>('idle');
   const [message, setMessage] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [retryKey, setRetryKey] = useState<string | null>(null);
 
-  const lastPayload = useRef<string | null>(null); // aakhri failed/processing request
   const inFlight = useRef(false); // double-click guard
   const nextRowId = useRef(3);
 
   const entries =
     mode === 'simple'
       ? (() => {
-          const amount = toMinorUnits(simple.amount) ?? 0;
-          return [
-            { accountId: simple.debit.trim(), side: 'debit' as const, amount },
-            { accountId: simple.credit.trim(), side: 'credit' as const, amount },
-          ];
-        })()
+        const amount = toMinorUnits(simple.amount) ?? 0;
+        return [
+          { accountId: simple.debit.trim(), side: 'debit' as const, amount },
+          { accountId: simple.credit.trim(), side: 'credit' as const, amount },
+        ];
+      })()
       : rows.map((r) => ({ accountId: r.accountId.trim(), side: r.side, amount: toMinorUnits(r.amount) ?? 0 }));
 
   const sum = (side: LedgerEntrySide) =>
@@ -54,6 +59,10 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
   const creditTotal = sum('credit');
   const balanced = debitTotal === creditTotal && debitTotal > 0;
   const submitting = status === 'submitting';
+
+  // Retry tabhi dikhta hai jab form bilkul wahi hai jo fail hua tha
+  const currentKey = JSON.stringify({ description, currency, entries });
+  const isRetry = retryKey !== null && retryKey === currentKey;
 
   const updateRow = (id: number, patch: Partial<Row>) =>
     setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -70,8 +79,7 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
     if (inFlight.current) return;
 
     // Data wahi hai toh same IDs se retry, data badla hai toh naye IDs
-    const payloadKey = JSON.stringify({ description, currency, entries });
-    const reuse = lastPayload.current === payloadKey;
+    const reuse = retryKey === currentKey;
     const active = reuse ? ids : newIds();
 
     const input: CreateLedgerTransactionInput = {
@@ -90,29 +98,65 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
     setStatus('submitting');
     setMessage('');
 
+    const base = {
+      transactionId: active.transactionId,
+      eventId: active.eventId,
+      amount: debitTotal,
+      currency,
+    };
+
     try {
       const result = await createTransaction(input, { simulate });
 
       if (result.outcome === 'processing') {
-        lastPayload.current = payloadKey;
+        const text = 'This request is still being processed. Wait a moment and retry. Resubmitting is safe.';
+        setRetryKey(currentKey);
         setStatus('processing');
-        setMessage('This request is still being processed. Wait a moment and check again. Resubmitting is safe.');
+        setMessage(text);
+        notify('warning', text);
+        record({ ...base, status: 'processing', message: 'Original request is still being processed.' });
         return;
       }
 
-      lastPayload.current = null;
+      const duplicate = result.outcome === 'already_processed';
+      const text = duplicate
+        ? 'Already processed. This request was completed earlier, so no duplicate was created.'
+        : `Transaction ${input.transactionId} recorded successfully.`;
+      setRetryKey(currentKey);
       setStatus('success');
-      setMessage(
-        result.outcome === 'already_processed'
-          ? 'Already processed. This request was completed earlier, so no duplicate was created.'
-          : 'Transaction recorded successfully.'
-      );
-      resetForm();
+      setMessage(text);
+      notify(duplicate ? 'info' : 'success', text);
+      record({
+        ...base,
+        status: duplicate ? 'duplicate' : 'success',
+        message: duplicate ? 'Same Event ID found. No duplicate created.' : 'Saved to the ledger.',
+      });
+      // Duplicate response ke baad hi form reset hoga
+      if (duplicate) {
+        setRetryKey(null);
+        resetForm();
+      }
       onCreated();
     } catch (e) {
-      lastPayload.current = payloadKey;
-      setStatus('failed_rolled_back');
-      setMessage((e as Error).message);
+      // Local error (request gayi hi nahi) bhi "kuch save nahi hua" hi hai
+      const kind = e instanceof TransactionError ? e.kind : 'rolled_back';
+      const reason = (e as Error).message;
+
+      setRetryKey(currentKey);
+      if (kind === 'rolled_back') {
+        const text = `Transaction failed and was rolled back. Nothing was saved. (${reason})`;
+        setStatus('failed_rolled_back');
+        setMessage(text);
+        notify('error', text);
+        record({ ...base, status: 'rolled_back', message: reason });
+      } else {
+        const text = `No confirmation received (${reason}) We cannot tell if it was saved. Retrying is safe: the same Event ID cannot be recorded twice.`;
+        setStatus('failed_unknown');
+        setMessage(text);
+        notify('warning', text);
+        record({ ...base, status: 'unknown', message: reason });
+      }
+      onCreated(); // ledger dobara load karo, taaki asli state dikhe
     } finally {
       inFlight.current = false;
     }
@@ -128,9 +172,8 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
               key={m}
               type="button"
               onClick={() => setMode(m)}
-              className={`rounded-md px-3 py-1 capitalize ${
-                mode === m ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
-              }`}
+              className={`rounded-md px-3 py-1 capitalize ${mode === m ? 'bg-slate-800 text-white' : 'text-slate-600 hover:bg-slate-100'
+                }`}
             >
               {m}
             </button>
@@ -236,9 +279,8 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
           </div>
 
           <div
-            className={`flex flex-wrap justify-between gap-2 rounded-lg px-3 py-2 text-sm ${
-              balanced ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
-            }`}
+            className={`flex flex-wrap justify-between gap-2 rounded-lg px-3 py-2 text-sm ${balanced ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
+              }`}
           >
             <span>Debits: {formatMoney(debitTotal, currency)}</span>
             <span>Credits: {formatMoney(creditTotal, currency)}</span>
@@ -260,12 +302,16 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
         <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">{message}</p>
       )}
       {status === 'failed_rolled_back' && (
-        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
-          <p className="font-medium">{message}</p>
-          <p className="mt-1">
-            If this was a network problem, you can retry safely. The same Event ID is reused, so it cannot be
-            charged twice.
-          </p>
+        <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <p className="font-medium">Rolled back</p>
+          <p className="mt-1">{message}</p>
+          <p className="mt-1 text-xs">You can fix the problem and retry. Nothing was recorded.</p>
+        </div>
+      )}
+      {status === 'failed_unknown' && (
+        <div className="rounded-lg border border-orange-200 bg-orange-50 px-3 py-2 text-sm text-orange-800">
+          <p className="font-medium">Outcome unconfirmed</p>
+          <p className="mt-1">{message}</p>
         </div>
       )}
 
@@ -279,7 +325,9 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
               className="rounded border border-slate-300 px-2 py-1"
             >
               <option value="none">Normal</option>
-              <option value="timeout">Network timeout (rollback)</option>
+              <option value="rollback">Server error (rolled back)</option>
+              <option value="timeout">Timeout, not saved</option>
+              <option value="timeout_saved">Timeout, but saved (response lost)</option>
               <option value="processing">Duplicate still processing</option>
             </select>
           </label>
@@ -291,11 +339,7 @@ export default function TransactionForm({ onCreated }: { onCreated: () => void }
           disabled={submitting}
           className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {submitting
-            ? 'Processing...'
-            : status === 'failed_rolled_back' || status === 'processing'
-              ? 'Retry'
-              : 'Submit transaction'}
+          {submitting ? 'Processing...' : isRetry ? 'Retry (same request)' : 'Submit transaction'}
         </button>
       </div>
     </div>

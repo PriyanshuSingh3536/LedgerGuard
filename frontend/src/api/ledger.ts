@@ -1,4 +1,4 @@
-import { get, post } from './client';
+import { ApiError, get, post } from './client';
 import { endpoints, requireEndpoint } from './endpoints';
 import { getMockOrg, isMock } from './mockSession';
 import type {
@@ -8,7 +8,18 @@ import type {
   LedgerTransaction,
 } from '../types/ledger';
 
-export type SimulateMode = 'none' | 'timeout' | 'processing';
+export type SimulateMode = 'none' | 'rollback' | 'timeout' | 'timeout_saved' | 'processing';
+export type FailureKind = 'rolled_back' | 'unknown';
+
+export class TransactionError extends Error {
+  kind: FailureKind;
+
+  constructor(message: string, kind: FailureKind) {
+    super(message);
+    this.name = 'TransactionError';
+    this.kind = kind;
+  }
+}
 export type CreateOutcome = 'created' | 'already_processed' | 'processing';
 
 export interface CreateResult {
@@ -98,19 +109,37 @@ export async function createTransaction(
   if (isMock()) {
     await wait(900);
 
-    // 1. Pehle se completed event: dobara process nahi hota
+    // Check if event is already processed
     const existing = store().find((t) => t.eventId === input.eventId);
-    if (existing) return { outcome: 'already_processed', transaction: existing };
 
-    // 2. Duplicate request jab original abhi processing mein ho
-    if (opts?.simulate === 'processing') return { outcome: 'processing' };
+    if (existing) {
+      return { outcome: 'already_processed', transaction: existing };
+    }
 
-    // 3. Network timeout: kuch save nahi hota (rollback)
-    if (opts?.simulate === 'timeout') {
-      throw new Error('Network timeout. The transaction was rolled back and nothing was saved.');
+    const mode = opts?.simulate ?? 'none';
+
+    if (mode === 'processing') {
+      return { outcome: 'processing' };
+    }
+
+    // Database rollback
+    if (mode === 'rollback') {
+      throw new TransactionError(
+        'Database write failed on the server.',
+        'rolled_back'
+      );
+    }
+
+    // Request timeout
+    if (mode === 'timeout') {
+      throw new TransactionError(
+        'The request timed out.',
+        'unknown'
+      );
     }
 
     const now = new Date().toISOString();
+
     const transaction: LedgerTransaction = {
       eventId: input.eventId,
       transactionId: input.transactionId,
@@ -118,15 +147,45 @@ export async function createTransaction(
       description: input.description,
       createdAt: now,
       updatedAt: now,
-      entries: input.entries.map((e) => ({ ...e, transactionId: input.transactionId })),
+      entries: input.entries.map((e) => ({
+        ...e,
+        transactionId: input.transactionId,
+      })),
     };
+
     store().push(transaction);
+
+    // Transaction saved, but response lost
+    if (mode === 'timeout_saved') {
+      throw new TransactionError(
+        'The request timed out.',
+        'unknown'
+      );
+    }
+
     return { outcome: 'created', transaction };
   }
 
-  const path = requireEndpoint(endpoints.ledger.create, 'Create transaction');
-  // TODO: Sanjana se confirm karo ki "created", "already completed" aur "processing"
-  // responses kaise aate hain (status code ya body), phir yahan map karo.
-  const transaction = await post<LedgerTransaction>(path, input);
-  return { outcome: 'created', transaction };
+  const path = requireEndpoint(
+    endpoints.ledger.create,
+    'Create transaction'
+  );
+
+  try {
+    // TODO: Confirm backend duplicate and processing responses
+    const transaction = await post<LedgerTransaction>(path, input);
+
+    return { outcome: 'created', transaction };
+  } catch (e) {
+    // Server responded with an HTTP error
+    if (e instanceof ApiError && e.status !== undefined) {
+      throw new TransactionError(e.message, 'rolled_back');
+    }
+
+    // No response received
+    throw new TransactionError(
+      'No response from the server.',
+      'unknown'
+    );
+  }
 }
