@@ -30,7 +30,11 @@ export default function LiveFeed() {
 
       {events.length === 0 ? (
         <p className="text-sm text-slate-500">
-          {status === 'live' ? 'Waiting for transactions...' : 'Not connected.'}
+          {status === 'live'
+            ? 'Waiting for transactions...'
+            : status === 'disabled'
+              ? 'Live updates are not available yet. The backend has no real-time feed.'
+              : 'Not connected.'}
         </p>
       ) : (
         <ul className="divide-y divide-slate-100">

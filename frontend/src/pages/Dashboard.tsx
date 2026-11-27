@@ -19,7 +19,7 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 
 export default function Dashboard() {
   const [days, setDays] = useState(7);
-  const ledger = useLedger();
+  const ledger = useLedger(1, 100);
   const usage = useUsageData(days);
 
   const summary = useMemo(() => summarizeByCurrency(ledger.transactions), [ledger.transactions]);
@@ -38,13 +38,14 @@ export default function Dashboard() {
       {!ledger.loading && !ledger.error && (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
-            <StatCard label="Total transactions" value={ledger.transactions.length} />
+            <StatCard label="Total transactions" value={ledger.pagination.totalRecords} />
             <StatCard label="Currencies" value={summary.length} />
             <StatCard label="Last activity" value={formatDateTime(recent[0]?.createdAt)} />
           </div>
 
           <div className="rounded-xl bg-white p-4 shadow-sm">
             <h3 className="mb-3 font-medium">Debit and credit summary</h3>
+            <p className="mb-3 text-xs text-slate-500">Based on the latest {ledger.transactions.length} transactions.</p>
             {summary.length === 0 ? (
               <p className="text-sm text-slate-500">No transactions yet.</p>
             ) : (

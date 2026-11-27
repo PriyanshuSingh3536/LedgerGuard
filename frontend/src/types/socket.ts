@@ -1,5 +1,4 @@
-export type ConnectionStatus = 'connecting' | 'live' | 'offline';
-
+export type ConnectionStatus = 'connecting' | 'live' | 'offline' | 'disabled';
 export type TxStatus = 'success' | 'failed' | 'rolled_back';
 
 // Usage ke delta: "aaj itni transactions aur itna amount aur jud gaya"

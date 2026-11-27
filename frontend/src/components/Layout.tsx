@@ -18,6 +18,7 @@ export default function Layout() {
     live: { dot: 'bg-green-500 animate-pulse', text: 'Live' },
     connecting: { dot: 'bg-amber-400', text: 'Connecting...' },
     offline: { dot: 'bg-red-500', text: 'Offline' },
+    disabled: { dot: 'bg-slate-400', text: 'Live updates off' },
   }[status];
 
   useEffect(() => {

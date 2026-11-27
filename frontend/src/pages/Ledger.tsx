@@ -1,11 +1,14 @@
 import { useMemo, useState } from 'react';
 import { useLedger } from '../hooks/useLedger';
+import AttemptLog from '../components/ledger/AttemptLog';
 import LedgerTable from '../components/ledger/LedgerTable';
 import TransactionForm from '../components/ledger/TransactionForm';
-import AttemptLog from '../components/ledger/AttemptLog';
+
+const PAGE_SIZE = 10;
 
 export default function Ledger() {
-  const { transactions, loading, error, reload } = useLedger();
+  const [page, setPage] = useState(1);
+  const { transactions, pagination, loading, error, reload } = useLedger(page, PAGE_SIZE);
   const [showForm, setShowForm] = useState(false);
   const [query, setQuery] = useState('');
   const [currency, setCurrency] = useState('ALL');
@@ -25,6 +28,15 @@ export default function Ledger() {
     });
   }, [transactions, query, currency]);
 
+  // Naya transaction page 1 par dikhta hai
+  const handleCreated = () => {
+    if (page !== 1) setPage(1);
+    else void reload();
+  };
+
+  const pagerButton =
+    'rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40';
+
   return (
     <div>
       <div className="mb-4 flex items-center justify-between">
@@ -37,11 +49,11 @@ export default function Ledger() {
         </button>
       </div>
 
-      {showForm && <TransactionForm onCreated={reload} />}
+      {showForm && <TransactionForm onCreated={handleCreated} />}
 
       <div className="mb-3 flex flex-wrap items-center gap-3">
         <input
-          placeholder="Search by ID, description or account"
+          placeholder="Search this page by ID, description or account"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           className="w-full max-w-sm rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-200"
@@ -56,7 +68,7 @@ export default function Ledger() {
         </select>
         {!loading && !error && (
           <span className="text-sm text-slate-500">
-            Showing {filtered.length} of {transactions.length}
+            Showing {filtered.length} of {transactions.length} on this page
           </span>
         )}
       </div>
@@ -64,8 +76,29 @@ export default function Ledger() {
       {loading && <p className="text-slate-500">Loading...</p>}
       {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
       {!loading && !error && <LedgerTable transactions={filtered} />}
+
+      {!error && pagination.totalRecords > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-600">
+          <span>
+            Page {pagination.currentPage} of {pagination.totalPages} · {pagination.totalRecords} records
+          </span>
+          <div className="flex gap-2">
+            <button onClick={() => setPage((p) => p - 1)} disabled={page <= 1 || loading} className={pagerButton}>
+              Previous
+            </button>
+            <button
+              onClick={() => setPage((p) => p + 1)}
+              disabled={page >= pagination.totalPages || loading}
+              className={pagerButton}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="mt-6">
-        <AttemptLog ledgerCount={transactions.length} />
+        <AttemptLog ledgerCount={pagination.totalRecords} />
       </div>
     </div>
   );

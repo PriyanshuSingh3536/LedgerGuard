@@ -42,3 +42,14 @@ export interface Attempt {
   message: string;
   at: string; // ISO
 }
+export interface Pagination {
+  currentPage: number;
+  pageSize: number;
+  totalRecords: number;
+  totalPages: number;
+}
+
+export interface LedgerPage {
+  transactions: LedgerTransaction[];
+  pagination: Pagination;
+}

@@ -4,6 +4,7 @@ import {
 } from 'chart.js';
 import { Line, Bar } from 'react-chartjs-2';
 import type { UsagePoint } from '../../types';
+import { fromMinorUnits } from '../../utils/money';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend, Filler);
 
@@ -33,7 +34,7 @@ export function RevenueBar({ data }: { data: UsagePoint[] }) {
         labels: data.map((d) => d.date.slice(5)),
         datasets: [{
           label: 'Amount (INR)',
-          data: data.map((d) => d.amount / 100),
+          data: data.map((d) => fromMinorUnits(d.amount)),
           backgroundColor: '#22a559',
         }],
       }}

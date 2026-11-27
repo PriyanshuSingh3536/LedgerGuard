@@ -7,7 +7,7 @@ import type { Me } from '../types';
 interface AuthValue {
   me: Me | null;
   ready: boolean; // false jab tak saved session check ho rahi hai
-  login: (email: string, password: string) => Promise<void>;
+  login: (organizationId: string, email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -80,8 +80,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('lg:unauthorized', logout);
   }, [logout]);
 
-  const login = async (email: string, password: string) => {
-    const { token, me: mockMe } = await loginApi(email, password);
+  const login = async (organizationId: string, email: string, password: string) => {
+  const { token, me: mockMe } = await loginApi(organizationId, email, password);
     setToken(token);
     try {
       const user = mockMe ?? (await getMe());

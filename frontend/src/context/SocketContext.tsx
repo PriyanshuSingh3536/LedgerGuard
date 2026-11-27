@@ -39,6 +39,12 @@ export function SocketProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!me) return; // login ke baad hi connect karo
+    // Backend mein Socket.io abhi nahi hai, isliye real mode mein tab tak connect nahi karte
+    if (import.meta.env.VITE_USE_MOCK !== 'true' && import.meta.env.VITE_ENABLE_SOCKET !== 'true') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setStatus('disabled');
+      return;
+    }
 
     // ---------- MOCK MODE: fake events ----------
     if (import.meta.env.VITE_USE_MOCK === 'true') {

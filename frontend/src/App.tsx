@@ -4,6 +4,7 @@ import { SocketProvider } from './context/SocketContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Ledger from './pages/Ledger';
 import TransactionDetail from './pages/TransactionDetail';
@@ -22,6 +23,7 @@ export default function App() {
               <ToastContainer />
               <Routes>
                 <Route path="/login" element={<Login />} />
+                <Route path="/register" element={<Register />} />
                 <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/ledger" element={<Ledger />} />
