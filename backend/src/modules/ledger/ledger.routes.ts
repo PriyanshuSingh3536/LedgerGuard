@@ -5,7 +5,10 @@ import { authenticateToken } from "../../middleware/auth.middleware.js";
 import { resolveTenant } from "../../middleware/tenant.middleware.js";
 import { attachTenantDatabase } from "../../middleware/tenant-db.middleware.js";
 
-import { createLedgerTransaction } from "./ledger.service.js";
+import {
+  createLedgerTransaction,
+  getLedgerTransactions,
+} from "./ledger.service.js";
 
 import type {
   CreateLedgerTransactionInput,
@@ -62,6 +65,73 @@ router.use(
   resolveTenant,
   attachTenantDatabase
 );
+
+
+// Retrieve paginated ledger transactions for the authenticated tenant.
+router.get("/", async (req, res) => {
+  const organizationId = req.tenantId;
+
+  if (!organizationId) {
+    res.status(403).json({
+      success: false,
+      message: "Tenant context is required",
+    });
+    return;
+  }
+
+  const pageParam = req.query.page;
+  const limitParam = req.query.limit;
+
+  if (
+    (pageParam !== undefined && typeof pageParam !== "string") ||
+    (limitParam !== undefined && typeof limitParam !== "string")
+  ) {
+    res.status(400).json({
+      success: false,
+      message: "Page and limit must be valid numbers",
+    });
+    return;
+  }
+
+  const page = pageParam === undefined ? 1 : Number(pageParam);
+  const limit = limitParam === undefined ? 10 : Number(limitParam);
+
+  if (
+    !Number.isSafeInteger(page) ||
+    page < 1 ||
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > 100
+  ) {
+    res.status(400).json({
+      success: false,
+      message: "Page must be positive and limit must be between 1 and 100",
+    });
+    return;
+  }
+
+  try {
+    const result = await getLedgerTransactions(
+      organizationId,
+      page,
+      limit
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Ledger transactions retrieved successfully",
+      data: result,
+    });
+  } catch (error) {
+    console.error("Get ledger transactions error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Unable to retrieve ledger transactions",
+    });
+  }
+});
+
 
 // Create a ledger transaction for the authenticated tenant.
 router.post("/", async (req, res) => {

@@ -8,6 +8,10 @@ import authRoutes from "./modules/auth/auth.routes.js";
 import tenantRoutes from "./modules/tenant/tenant.routes.js";
 import { connectRedis, disconnectRedis } from "./config/redis.js";
 import ledgerRoutes from "./modules/ledger/ledger.routes.js";
+import {
+  connectCentralDatabase,
+  disconnectCentralDatabase,
+} from "./config/central-database.js";
 
 const app = express();
 
@@ -33,6 +37,9 @@ app.use("/api/ledger", ledgerRoutes);
 // Start server after Redis connection
 async function startServer(): Promise<void> {
   try {
+    await connectCentralDatabase();
+console.log("Central database connected successfully");
+
     await connectRedis();
 
     const server = app.listen(env.PORT, () => {
@@ -52,6 +59,10 @@ async function startServer(): Promise<void> {
         try {
           await disconnectRedis();
           console.log("Redis connection closed successfully");
+
+          await disconnectCentralDatabase();
+console.log("Central database connection closed successfully");
+
         } catch (redisError) {
           console.error("Redis shutdown error:", redisError);
           process.exitCode = 1;

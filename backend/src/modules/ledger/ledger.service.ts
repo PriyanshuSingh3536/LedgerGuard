@@ -375,3 +375,71 @@ heartbeat.assertLockActive();
     }
   }
 }
+
+
+// Retrieve paginated ledger transactions for a tenant.
+export async function getLedgerTransactions(
+  organizationId: string,
+  page: number,
+  limit: number
+) {
+  const connection = await getTenantConnection(organizationId);
+
+  const {
+    LedgerTransactionModel,
+    LedgerEntryModel,
+  } = getLedgerModels(connection);
+
+  const skip = (page - 1) * limit;
+
+  // Retrieve transactions and total count.
+  const [transactions, totalRecords] = await Promise.all([
+    LedgerTransactionModel.find()
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
+      .limit(limit)
+      .lean(),
+
+    LedgerTransactionModel.countDocuments(),
+  ]);
+
+  // Retrieve entries belonging to these transactions.
+  const transactionIds = transactions.map(
+    (transaction) => transaction.transactionId
+  );
+
+  const entries = transactionIds.length
+    ? await LedgerEntryModel.find({
+        transactionId: { $in: transactionIds },
+      }).lean()
+    : [];
+
+  // Group entries by transaction ID.
+  const entriesByTransaction = new Map<string, typeof entries>();
+
+  for (const entry of entries) {
+    const existingEntries =
+      entriesByTransaction.get(entry.transactionId) ?? [];
+
+    existingEntries.push(entry);
+
+    entriesByTransaction.set(entry.transactionId, existingEntries);
+  }
+
+  // Attach entries to their respective transactions.
+  const data = transactions.map((transaction) => ({
+    ...transaction,
+    entries:
+      entriesByTransaction.get(transaction.transactionId) ?? [],
+  }));
+
+  return {
+    transactions: data,
+    pagination: {
+      currentPage: page,
+      pageSize: limit,
+      totalRecords,
+      totalPages: Math.ceil(totalRecords / limit),
+    },
+  };
+}
