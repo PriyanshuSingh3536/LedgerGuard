@@ -2,7 +2,9 @@
 import assert from "node:assert/strict";
 import type { Request, Response, NextFunction } from "express";
 
-import { verifyTenantIsolation } from "../src/database-security/tenant-isolation.js";
+import {
+  verifyTenantIsolation,
+} from "../src/database-security/tenant-isolation.js";
 
 function runMiddleware(
   tenantId?: string,
@@ -70,6 +72,19 @@ function runMiddleware(
   assert.equal(result.statusCode, 400);
   assert.equal(result.nextCalled, false);
   console.log("PASS: Missing resource organization ID blocked");
+}
+
+// Test 5: Missing authentication should be blocked.
+{
+  const result = runMiddleware(
+    "org-123",
+    "org-123",
+    null
+  );
+
+  assert.equal(result.statusCode, 401);
+  assert.equal(result.nextCalled, false);
+  console.log("PASS: Missing authentication blocked");
 }
 
 console.log("All tenant isolation tests passed!");
